@@ -3,8 +3,8 @@
 // 2020-06-14 dan@marginallyclever.com
 //--------------------------------------------------------------
 
-int tileSize = 10;
 int lineSpacing = 10;
+int tileSize = 10;
 int iterSize = 1;
 float maxWeight = lineSpacing*2/3;
 
