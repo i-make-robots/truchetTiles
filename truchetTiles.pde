@@ -2,6 +2,7 @@
 // weighted truchet tiles
 // 2020-06-14 dan@marginallyclever.com
 //--------------------------------------------------------------
+import java.util.*;
 
 // CONSTANTS
 int lineSpacing = 10;
@@ -9,6 +10,12 @@ int tileSize = 10;
 int iterSize = 5;
 float maxWeight = lineSpacing*2.0/3.0;
 float tileAdj = lineSpacing/2;
+
+// pen up angle (for export to gcode)
+float zUp=90;
+// pen down angle (for export to gcode)
+float zDown=40;
+
 
 // CLASSES
 class LineSegment {
@@ -59,6 +66,7 @@ class LineSegment {
 };
 
 
+
 class Line {
   public ArrayList<LineSegment> segments = new ArrayList<LineSegment>();
   
@@ -79,7 +87,15 @@ class Line {
       py=n.y1;
     }
   }
+  
+  public void flip() {
+    Collections.reverse(segments);
+    for(LineSegment s : segments) {
+      s.flip();
+    }
+  }
 }
+
 
 // GLOBALS
 // the unsorted line segments created by the truchet tile generator
@@ -95,6 +111,9 @@ ArrayList<Line> orderedLines = new ArrayList<Line>();
 PImage img;
 // the mask controls the direction of each truchet tile.
 PImage mask;
+
+// when scoring lines, which end is better?
+boolean headBest;
 
 
 void setup() {
@@ -355,7 +374,13 @@ void smoothSection(Line temp,LineSegment head,LineSegment s) {
 }
 
 void sortLinesByTravel() {
-  if(sortedLines.size()==0) return;
+  if(sortedLines.size()==0) {
+    // all done!
+    noLoop();
+    // export lines as gcode?
+    exportLines(orderedLines);
+    return;
+  }
   
   if(activeLine==null) {
     activeLine = sortedLines.remove(0);
@@ -363,15 +388,19 @@ void sortLinesByTravel() {
  
   Line best = sortedLines.get(0);
   float bestScore = scoreLine(activeLine,best);
+  boolean bestEnd = true;
   
   for( Line b : sortedLines ) {
     float s = scoreLine(activeLine,b);
     if(bestScore>s) {
       bestScore=s;
+      bestEnd = headBest;
       best=b;
+      
     }
   }
   sortedLines.remove(best);
+  if(bestEnd==false) best.flip();  
   orderedLines.add(best);
   activeLine = best;
 }
@@ -385,6 +414,8 @@ float scoreLine(Line a,Line b) {
   float head = distSq(atail.x0,atail.y0,bhead.x0,bhead.y0);
   float tail = distSq(atail.x0,atail.y0,btail.x1,btail.y1);
   
+  headBest = head<tail;
+  
   return min( head, tail );
 }
 
@@ -392,4 +423,149 @@ float distSq(float x0,float y0,float x1,float y1) {
   float dx=x1-x0;
   float dy=y1-y0;
   return dx*dx+dy*dy;
+}
+
+  
+// replace default nf() with one that doesn't add european conventions.
+String nf2(float number,int left,int right) {
+  String result = nf((float)number,left,right);
+  return result;
+}
+
+float tx(float v) {
+  return v-(img.width/2);
+}
+
+float ty(float v) {
+  return (img.height/2)-v;
+}
+
+boolean exportOnce=false;
+void exportLines(ArrayList<Line> lines) {
+  if(exportOnce) return;
+  exportOnce=true;
+  println("Export start");
+  
+  PrintWriter f = createWriter("output.ngc");
+  f.println("; "+year()+"-"+month()+"-"+day()+" truchetTiles");
+  f.println("G28");
+  f.println("G0 Z"+nf2(zUp,0,0));
+  
+  for(Line i : lines) {
+    if(i.segments.size()==0) continue;
+    
+    writeLine2(i,f);
+    //writeLine1(i,f);
+  }
+  
+  f.flush();
+  f.close();
+  println("Export done");
+}
+
+
+void writeLine1(Line li,PrintWriter f) {
+  LineSegment start = li.segments.get(0);
+  f.println("G0 X"+tx(start.x0)+" Y"+ty(start.y0));
+  f.println("G0 Z"+nf2(zDown,0,0));
+  for(LineSegment s : li.segments) {
+    writeLineSegment1(s,f);
+  }
+  f.println("G0 Z"+nf2(zUp,0,0));
+}
+
+// we want a filled box with the major axis (length) x0,y0-x1,y1 and width s.weight
+void writeLineSegment1(LineSegment s,PrintWriter f) {
+  float x0=tx(s.x0);
+  float y0=ty(s.y0);
+  
+  float x1=tx(s.x1);
+  float y1=ty(s.y1);
+  // find a unit vector orthogonal to the original line
+  float nx=y1-y0;
+  float ny=x0-x1;
+  float nd=sqrt(sq((float)nx)+sq((float)ny));
+  nx/=nd;
+  ny/=nd;
+  
+  float w=1;
+  float limit = (float)s.weight / 2.0;
+  
+  for(float j=-limit;j<=limit;j+=w) {
+    f.println("G0 X"+(x0+nx*j)+" Y"+(y0+ny*j));
+    f.println("G0 X"+(x1+nx*j)+" Y"+(y1+ny*j));
+  }
+  f.println("G0 X"+x1+" Y"+y1);
+}
+
+// draw line from start to finish, then go back and do it again but offset where needed to give thickness.
+void writeLine2(Line li,PrintWriter f) {
+  // find the thickest part of the line, which tells us how many cycles we'll have to make.
+  float w=0;
+  for(LineSegment s : li.segments) {
+    w=max(w,s.weight);
+  }
+  
+  int cw= ceil(w)/2;
+  if(cw<1) cw=1;
+  
+  LineSegment start = li.segments.get(0);
+  f.println("G0 X"+tx(start.x0)+" Y"+ty(start.y0));
+  f.println("G0 Z"+nf2(zDown,0,0));
+
+  LineSegment pSeg=start;
+  for(LineSegment seg : li.segments) {
+    writeLineSegment2a(f,seg,pSeg,0,cw);
+    pSeg=seg;
+  }
+  
+  for(int pass=1; pass<=cw; ++pass) {
+    ListIterator<LineSegment> iter = li.segments.listIterator(li.segments.size());
+    while(iter.hasPrevious()) {
+      LineSegment seg = iter.previous();
+      writeLineSegment2b(f,seg,pSeg,pass,cw);
+      pSeg=seg;
+    }
+    for(LineSegment seg : li.segments) {
+      writeLineSegment2a(f,seg,pSeg,pass,cw);
+      pSeg=seg;
+    }
+  }
+  f.println("G0 Z"+nf2(zUp,0,0));
+}
+
+// we want a filled box with the major axis (length) x0,y0-x1,y1 and width s.weight
+void writeLineSegment2a(PrintWriter f,LineSegment s,LineSegment s0,int pass,int cw) {
+  float x0=tx(s.x0);
+  float y0=ty(s.y0);
+  float x1=tx(s.x1);
+  float y1=ty(s.y1);
+  
+  writeLineSegment2c(f,x0,y0,x1,y1,pass,cw,s.weight,s0.weight);
+}
+
+// we want a filled box with the major axis (length) x0,y0-x1,y1 and width s.weight
+void writeLineSegment2b(PrintWriter f,LineSegment s,LineSegment s0,int pass,int cw) {
+  float x1=tx(s.x0);
+  float y1=ty(s.y0);
+  float x0=tx(s.x1);
+  float y0=ty(s.y1);
+  writeLineSegment2c(f,x0,y0,x1,y1,pass,cw,s.weight,s0.weight);
+}
+
+void writeLineSegment2c(PrintWriter f,float x0,float y0,float x1,float y1,int pass,int cw,float w1,float w0) {
+  // find a unit vector orthogonal to the original line
+  float nx=y1-y0;
+  float ny=x0-x1;
+  float nd=sqrt(sq((float)nx)+sq((float)ny));
+  
+  float div = (float)pass / (float)cw;
+  float j0 = (w0/2.0)*div;
+  float j1 = (w1/2.0)*div;
+  
+  nx/=nd;
+  ny/=nd;
+  
+  f.println("G0 X"+(x0+nx*j0)+" Y"+(y0+ny*j0));
+  f.println("G0 X"+(x1+nx*j1)+" Y"+(y1+ny*j1));
 }
