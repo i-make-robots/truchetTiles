@@ -66,6 +66,14 @@ class LineSegment {
 };
 
 
+class Point {
+  public float x,y;
+  
+  Point(float xx,float yy) {
+    x=xx;
+    y=yy;
+  }
+}
 
 class Line {
   public ArrayList<LineSegment> segments = new ArrayList<LineSegment>();
@@ -120,6 +128,11 @@ void setup() {
   size(960,960);
   strokeJoin(ROUND);
   strokeCap(ROUND);
+  
+  float cw=20;
+  for(float pass=0;pass<=cw;pass++) {
+    println(adjustedOffset(10,pass, cw));
+  }
 
   //img = loadImage("tunein-turnon-dropout-karililt.jpg");
   //mask = loadImage("drug.jpg");
@@ -455,7 +468,6 @@ void exportLines(ArrayList<Line> lines) {
     if(i.segments.size()==0) continue;
     
     writeLine2(i,f);
-    //writeLine1(i,f);
   }
   
   f.flush();
@@ -463,40 +475,6 @@ void exportLines(ArrayList<Line> lines) {
   println("Export done");
 }
 
-
-void writeLine1(Line li,PrintWriter f) {
-  LineSegment start = li.segments.get(0);
-  f.println("G0 X"+tx(start.x0)+" Y"+ty(start.y0));
-  f.println("G0 Z"+nf2(zDown,0,0));
-  for(LineSegment s : li.segments) {
-    writeLineSegment1(s,f);
-  }
-  f.println("G0 Z"+nf2(zUp,0,0));
-}
-
-// we want a filled box with the major axis (length) x0,y0-x1,y1 and width s.weight
-void writeLineSegment1(LineSegment s,PrintWriter f) {
-  float x0=tx(s.x0);
-  float y0=ty(s.y0);
-  
-  float x1=tx(s.x1);
-  float y1=ty(s.y1);
-  // find a unit vector orthogonal to the original line
-  float nx=y1-y0;
-  float ny=x0-x1;
-  float nd=sqrt(sq((float)nx)+sq((float)ny));
-  nx/=nd;
-  ny/=nd;
-  
-  float w=1;
-  float limit = (float)s.weight / 2.0;
-  
-  for(float j=-limit;j<=limit;j+=w) {
-    f.println("G0 X"+(x0+nx*j)+" Y"+(y0+ny*j));
-    f.println("G0 X"+(x1+nx*j)+" Y"+(y1+ny*j));
-  }
-  f.println("G0 X"+x1+" Y"+y1);
-}
 
 // draw line from start to finish, then go back and do it again but offset where needed to give thickness.
 void writeLine2(Line li,PrintWriter f) {
@@ -506,66 +484,108 @@ void writeLine2(Line li,PrintWriter f) {
     w=max(w,s.weight);
   }
   
-  int cw= ceil(w)/2;
+  int cw= ceil(w);
   if(cw<1) cw=1;
-  
-  LineSegment start = li.segments.get(0);
-  f.println("G0 X"+tx(start.x0)+" Y"+ty(start.y0));
-  f.println("G0 Z"+nf2(zDown,0,0));
 
-  LineSegment pSeg=start;
-  for(LineSegment seg : li.segments) {
-    writeLineSegment2a(f,seg,pSeg,0,cw);
-    pSeg=seg;
+  boolean first=true;
+  LineSegment start = li.segments.get(0);
+  
+  ArrayList<Point> offsetSequence = new ArrayList<Point>();
+    
+  // collect all the points, write them at the end.
+  for(int pass=0; pass<=cw; ++pass) {
+    // add first point at start of line
+    float [] s0 = getOffsetLine(
+      start.x0,start.y0,
+      start.x1,start.y1,
+      adjustedOffset(start.weight,pass,cw)
+    );
+
+    offsetSequence.add(new Point(s0[0],s0[1]));
+    
+    // add the middle points of the line
+    for(int i=1;i<li.segments.size();++i) {
+      LineSegment seg = li.segments.get(i);
+      float [] s1 = getOffsetLine(
+        seg.x0,seg.y0,
+        seg.x1,seg.y1,
+        adjustedOffset(seg.weight,pass,cw)
+      );
+      float [] inter = findIntersection(
+        s0[0],s0[1],
+        s0[2],s0[3],
+        s1[0],s1[1],
+        s1[2],s1[3]
+      );
+      offsetSequence.add(new Point(inter[0],inter[1]));
+      s0=s1;
+    }
+    // add the last point of the line
+    offsetSequence.add(new Point(s0[2],s0[3]));
+    
+    if((pass%2)==1) {
+      Collections.reverse(offsetSequence);
+    }
+    
+    // write the line to file.
+    for( Point p : offsetSequence ) {
+      f.println("G0 X"+tx(p.x)+" Y"+ty(p.y));
+      if(first) {
+        f.println("G0 Z"+nf2(zDown,0,0));
+        first=false;
+      }
+    }
+    offsetSequence.clear();
   }
   
-  for(int pass=1; pass<=cw; ++pass) {
-    ListIterator<LineSegment> iter = li.segments.listIterator(li.segments.size());
-    while(iter.hasPrevious()) {
-      LineSegment seg = iter.previous();
-      writeLineSegment2b(f,seg,pSeg,pass,cw);
-      pSeg=seg;
-    }
-    for(LineSegment seg : li.segments) {
-      writeLineSegment2a(f,seg,pSeg,pass,cw);
-      pSeg=seg;
-    }
-  }
   f.println("G0 Z"+nf2(zUp,0,0));
 }
 
-// we want a filled box with the major axis (length) x0,y0-x1,y1 and width s.weight
-void writeLineSegment2a(PrintWriter f,LineSegment s,LineSegment s0,int pass,int cw) {
-  float x0=tx(s.x0);
-  float y0=ty(s.y0);
-  float x1=tx(s.x1);
-  float y1=ty(s.y1);
-  
-  writeLineSegment2c(f,x0,y0,x1,y1,pass,cw,s.weight,s0.weight);
+float adjustedOffset(float weight,float pass,float cw) {
+  float v = pass/cw;
+  return (weight*v - weight/2.0) * (4.0/5.0);
 }
 
-// we want a filled box with the major axis (length) x0,y0-x1,y1 and width s.weight
-void writeLineSegment2b(PrintWriter f,LineSegment s,LineSegment s0,int pass,int cw) {
-  float x1=tx(s.x0);
-  float y1=ty(s.y0);
-  float x0=tx(s.x1);
-  float y0=ty(s.y1);
-  writeLineSegment2c(f,x0,y0,x1,y1,pass,cw,s.weight,s0.weight);
+float[] getOffsetLine(float x0,float y0,float x1,float y1,float r0) {
+  // get normal of each line
+  float nx01 = y1-y0;
+  float ny01 = x0-x1;
+  float d01 = sqrt(sq(nx01)+sq(ny01)); 
+  nx01/=d01;
+  ny01/=d01;
+  
+  float ox1 = x0+nx01*r0;
+  float oy1 = y0+ny01*r0;
+  float ox2 = x1+nx01*r0;
+  float oy2 = y1+ny01*r0;
+  return new float[] { ox1,oy1,ox2,oy2 };
 }
 
-void writeLineSegment2c(PrintWriter f,float x0,float y0,float x1,float y1,int pass,int cw,float w1,float w0) {
-  // find a unit vector orthogonal to the original line
-  float nx=y1-y0;
-  float ny=x0-x1;
-  float nd=sqrt(sq((float)nx)+sq((float)ny));
+float [] findIntersectionOffset(float x0,float y0,float x1,float y1,float x2,float y2,float r0,float r1) {
+  float[] v0=getOffsetLine(x0,y0,x1,y1,r0);
+  float[] v1=getOffsetLine(x1,y1,x2,y2,r1);
   
-  float div = (float)pass / (float)cw;
-  float j0 = (w0/2.0)*div;
-  float j1 = (w1/2.0)*div;
+  return findIntersection(
+    v0[0],v0[1],
+    v0[2],v0[3],
+    v1[0],v1[1],
+    v1[2],v1[3]
+    );
+}
+
+float [] findIntersection(float x1,float y1,float x2,float y2,float x3,float y3,float x4,float y4) {  
+  float d = ((x1-x2)*(y3-y4) - (y1-y2)*(x3-x4));
+  if(abs(d)<0.01) {
+    // lines are colinear (infinite solutions) or parallel (no solutions).
+    float ix = (x4+x1)/2;
+    float iy = (y4+y1)/2;
+    return new float [] { ix, iy };
+  }
   
-  nx/=nd;
-  ny/=nd;
+  float t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / d;
+  //float u = ((x1-x2)*(y1-y3) - (y1-y2)*(x1-x3)) / d;
   
-  f.println("G0 X"+(x0+nx*j0)+" Y"+(y0+ny*j0));
-  f.println("G0 X"+(x1+nx*j1)+" Y"+(y1+ny*j1));
+  float ix = x1+t*(x2-x1);
+  float iy = y1+t*(y2-y1);
+  return new float[] { ix, iy };
 }
