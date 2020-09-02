@@ -527,8 +527,11 @@ void writeLine2(Line li,PrintWriter f) {
       Collections.reverse(offsetSequence);
     }
     
+    // optimize
+    ArrayList<Point> newSequence = optimizeLine(offsetSequence);
+    
     // write the line to file.
-    for( Point p : offsetSequence ) {
+    for( Point p : newSequence ) {
       f.println("G0 X"+tx(p.x)+" Y"+ty(p.y));
       if(first) {
         f.println("G0 Z"+nf2(zDown,0,0));
@@ -539,6 +542,51 @@ void writeLine2(Line li,PrintWriter f) {
   }
   
   f.println("G0 Z"+nf2(zUp,0,0));
+}
+
+ArrayList<Point> optimizeLine(ArrayList<Point> original) {
+  ArrayList<Point> improved = new ArrayList<Point> ();
+  int s = original.size(); 
+  if(s<3) {
+    improved.addAll(original);
+    return improved;
+  }
+  
+  Point p0 = original.get(0);
+  Point p1 = original.get(1);
+  Point p2 = null;
+  improved.add(p0);
+  
+  for(int i=2;i<s;++i) {
+    p2=original.get(i);
+    // get unit vector a = p1 - p0
+    float ax = p1.x-p0.x;
+    float ay = p1.y-p0.y;
+    float d01 = sqrt(sq(ax)+sq(ay));
+    ax/=d01;
+    ay/=d01;
+    
+    // get unit vector b = p1 - p0
+    float bx = p2.x-p0.x;
+    float by = p2.y-p0.y;
+    float d02 = sqrt(sq(bx)+sq(by));
+    bx/=d02;
+    by/=d02;
+    
+    // if a==b 
+    if( abs(ax-bx)<1e-5 && abs(ay-by)<1e-5) {
+      // do nothing
+    } else {
+      p0=p1;
+      p1=p2;
+      improved.add(p1);
+    }
+  }
+  if(p2!=null) {
+    improved.add(p2);
+  }
+  
+  return improved;
 }
 
 float adjustedOffset(float weight,float pass,float cw) {
