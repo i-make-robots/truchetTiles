@@ -574,13 +574,13 @@ ArrayList<Point> optimizeLine(ArrayList<Point> original) {
     by/=d02;
     
     // if a==b 
-    if( abs(ax-bx)<1e-5 && abs(ay-by)<1e-5) {
+    if( abs(ax-bx)<1e-3 && abs(ay-by)<1e-3) {
       // do nothing
     } else {
-      p0=p1;
-      p1=p2;
       improved.add(p1);
     }
+    p0=p1;
+    p1=p2;
   }
   if(p2!=null) {
     improved.add(p2);
