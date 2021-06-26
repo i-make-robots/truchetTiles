@@ -122,7 +122,7 @@ PImage mask;
 
 // when scoring lines, which end is better?
 boolean headBest;
-
+int readyState;
 
 void setup() {
   size(960,960);
@@ -137,12 +137,30 @@ void setup() {
   //img = loadImage("tunein-turnon-dropout-karililt.jpg");
   //mask = loadImage("drug.jpg");
 
-  img = loadImage("alan-turing.jpg");
-  mask = loadImage("code.jpg");
+  readyState=0;
+  selectInput("Select the image picture","imageSelected");
+}
 
+void imageSelected(File selection) {
+  if(selection == null) {
+    exit();
+    return;
+  }
+  img = loadImage(selection.getAbsolutePath());
   img.filter(GRAY);
-  mask.filter(GRAY);
+  readyState=1;
+  selectInput("Select the mask picture","maskSelected");
+}
 
+void maskSelected(File selection) {
+  if(selection == null) {
+    exit();
+    return;
+  }
+  mask = loadImage(selection.getAbsolutePath());
+  mask.filter(GRAY);
+  readyState=2;
+  
   for(int y=0;y<height;y+=tileSize) {
     for(int x=0;x<width;x+=tileSize) {
       //int t = floor(random(2));
@@ -152,6 +170,7 @@ void setup() {
     }
   }
 }
+
 
 // Interpolate from (x0,y0) to (x1,y1) in steps of length iterSize.
 void inter(float x0,float y0,float x1,float y1,int ax,int ay) {
@@ -201,6 +220,8 @@ void tileB(float x0,float y0) {
 void draw() {
   background(255);
 
+  if(readyState<2) return;
+  
   // draw unsorted line segments
   stroke(0);
   unsorted.draw();
@@ -208,7 +229,7 @@ void draw() {
   // draw sorted line segments
   int i=0;
   for( Line n : sortedLines ) {
-    if(orderedLines.isEmpty()) rainbow(i);
+    //if(orderedLines.isEmpty()) rainbow(i);  // make pretty colors for to debug
     i+=3;
     n.drawSorted();
   }
@@ -216,7 +237,7 @@ void draw() {
   // draw ordered line segments
   i=0;
   for( Line n : orderedLines ) {
-    if(!sortedLines.isEmpty()) rainbow(i);
+    //if(!sortedLines.isEmpty()) rainbow(i);  // make pretty colors for to debug
     i+=3;
     n.drawSorted();
   }
