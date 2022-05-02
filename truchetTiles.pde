@@ -173,7 +173,7 @@ void maskSelected(File selection) {
 
 
 // Interpolate from (x0,y0) to (x1,y1) in steps of length iterSize.
-void inter(float x0,float y0,float x1,float y1,int ax,int ay) {
+void interTile(float x0,float y0,float x1,float y1,int ax,int ay) {
   // get the line length
   float dx = x1-x0;
   float dy = y1-y0;
@@ -195,16 +195,18 @@ void inter(float x0,float y0,float x1,float y1,int ax,int ay) {
   }
 }
 
+
 // style=/
 void tileA(float x0,float y0) {
   float x1=x0+tileSize;
   float y1=y0+tileSize;
 
   for(float x=tileAdj;x<tileSize;x+=lineSpacing) {
-    inter(x0+x,y0,x0,y0+x,int(x0/tileSize),int(y0/tileSize));
-    inter(x0+x,y1,x1,y0+x,int(x0/tileSize),int(y0/tileSize));
+    interTile(x0+x,y0,x0,y0+x,int(x0/tileSize),int(y0/tileSize));
+    interTile(x0+x,y1,x1,y0+x,int(x0/tileSize),int(y0/tileSize));
   }
 }
+
 
 // style=\
 void tileB(float x0,float y0) {
@@ -212,10 +214,11 @@ void tileB(float x0,float y0) {
   float y1=y0+tileSize;
 
   for(float x=tileAdj;x<tileSize;x+=lineSpacing) {
-    inter(x0+x,y0,x1,y1-x,int(x0/tileSize),int(y0/tileSize));
-    inter(x0+x,y1,x0,y1-x,int(x0/tileSize),int(y0/tileSize));
+    interTile(x0+x,y0,x1,y1-x,int(x0/tileSize),int(y0/tileSize));
+    interTile(x0+x,y1,x0,y1-x,int(x0/tileSize),int(y0/tileSize));
   }
 }
+
 
 void draw() {
   background(255);
@@ -227,18 +230,18 @@ void draw() {
   unsorted.draw();
   
   // draw sorted line segments
-  int i=0;
+  //int i=0;
   for( Line n : sortedLines ) {
     //if(orderedLines.isEmpty()) rainbow(i);  // make pretty colors for to debug
-    i+=3;
+    //i+=3;
     n.drawSorted();
   }
   
   // draw ordered line segments
-  i=0;
+  //i=0;
   for( Line n : orderedLines ) {
     //if(!sortedLines.isEmpty()) rainbow(i);  // make pretty colors for to debug
-    i+=3;
+    //i+=3;
     n.drawSorted();
   }
   
@@ -282,7 +285,7 @@ void sortSegmentsIntoLines() {
 
   
   if(activeLine==null) {
-    activeLine = new Line(); //<>//
+    activeLine = new Line();
     activeLine.segments.add(unsorted.segments.remove(0));
     sortedLines.add(activeLine);
     //print("\n"+lines.size());
